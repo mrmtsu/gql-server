@@ -8,21 +8,25 @@ import (
 	"fmt"
 	"graphql-server/graph/generated"
 	"graphql-server/graph/model"
-	"math/rand"
 )
 
 func (r *mutationResolver) CreateTodo(ctx context.Context, input model.NewTodo) (*model.Todo, error) {
 	todo := &model.Todo{
+		ID:     "1",
 		Text:   input.Text,
-		ID:     fmt.Sprintf("T%d", rand.Int()),
+		Done:   false,
 		UserID: input.UserID,
 	}
 	r.todos = append(r.todos, todo)
 	return todo, nil
 }
 
+func (r *mutationResolver) CreateUser(ctx context.Context, input model.NewUser) (string, error) {
+	panic(fmt.Errorf("not implemented"))
+}
+
 func (r *queryResolver) Todos(ctx context.Context) ([]*model.Todo, error) {
-	return r.todos, nil
+	panic(fmt.Errorf("not implemented"))
 }
 
 func (r *todoResolver) User(ctx context.Context, obj *model.Todo) (*model.User, error) {
