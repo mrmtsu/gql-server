@@ -4,7 +4,7 @@
 
 type Todo {
   id: ID!
-  text: String!
+  title: String!
   done: Boolean!
   user: User!
 }
@@ -15,11 +15,12 @@ type User {
 }
 
 type Query {
-  todos: [Todo!]!
+  todos(userId: ID!): [Todo!]!
+  user(id: ID!): User!
 }
 
 input NewTodo {
-  text: String!
+  title: String!
   userId: String!
 }
 

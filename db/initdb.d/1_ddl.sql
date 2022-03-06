@@ -6,7 +6,23 @@ SET FOREIGN_KEY_CHECKS=0;
 CREATE TABLE IF NOT EXISTS `todos` (
   `id` VARCHAR(255) NOT NULL,
   `title` VARCHAR(255) NOT NULL,
-  `body` TEXT NOT NULL,
+  `done` TINYINT NOT NULL,
+  `user_id` VARCHAR(255) NOT NULL,
+  `created_at` DATETIME NOT NULL,
+  `updated_at` DATETIME NOT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `todo_idx` (`user_id` ASC),
+  CONSTRAINT `todo_user`
+    FOREIGN KEY (`user_id`)
+    REFERENCES `users` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB DEFAULT CHARSET=utf8mb4
+COMMENT = '';
+
+CREATE TABLE IF NOT EXISTS `users` (
+  `id` VARCHAR(255) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
   `created_at` DATETIME NOT NULL,
   `updated_at` DATETIME NOT NULL,
   PRIMARY KEY (`id`))
