@@ -2,33 +2,22 @@
 #
 # https://gqlgen.com/getting-started/
 
-type Todo {
-  id: ID!
-  title: String!
-  done: Boolean!
-  user: User!
-}
-
-type User {
-  id: ID!
-  name: String!
-}
-
 type Query {
-  todos(userId: ID!): [Todo!]!
-  user(id: ID!): User!
-}
-
-input NewTodo {
-  title: String!
-  userId: String!
-}
-
-input NewUser {
-  name: String!
+  node(id: ID!): Node
 }
 
 type Mutation {
-  createTodo(input: NewTodo!): Todo!
-  createUser(input: NewUser!): ID!
+  noop(input: NoopInput): NoopPayload
+}
+
+interface Node {
+  id: ID!
+}
+
+input NoopInput {
+  clientMutationId: String
+}
+
+type NoopPayload {
+  clientMutationId: String
 }

@@ -2,11 +2,23 @@
 
 package model
 
+type Node interface {
+	IsNode()
+}
+
 type NewTodo struct {
-	Text   string `json:"text"`
+	Title  string `json:"title"`
 	UserID string `json:"userId"`
 }
 
 type NewUser struct {
 	Name string `json:"name"`
+}
+
+type NoopInput struct {
+	ClientMutationID *string `json:"clientMutationId"`
+}
+
+type NoopPayload struct {
+	ClientMutationID *string `json:"clientMutationId"`
 }

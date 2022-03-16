@@ -2,7 +2,7 @@ package model
 
 type Todo struct {
 	ID     string `json:"id"`
-	Text   string `json:"text"`
+	Title  string `json:"title"`
 	Done   bool   `json:"done"`
 	UserID string `json:"user"`
 }

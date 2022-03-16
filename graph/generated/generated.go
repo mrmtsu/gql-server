@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"graphql-server/graph/model"
 	"strconv"
 	"sync"
@@ -47,17 +48,25 @@ type ComplexityRoot struct {
 	Mutation struct {
 		CreateTodo func(childComplexity int, input model.NewTodo) int
 		CreateUser func(childComplexity int, input model.NewUser) int
+		Noop       func(childComplexity int, input *model.NoopInput) int
+	}
+
+	NoopPayload struct {
+		ClientMutationID func(childComplexity int) int
 	}
 
 	Query struct {
-		Todos func(childComplexity int) int
+		Node  func(childComplexity int, id string) int
+		Todo  func(childComplexity int, id string) int
+		Todos func(childComplexity int, userID string) int
+		User  func(childComplexity int, id string) int
 	}
 
 	Todo struct {
-		Done func(childComplexity int) int
-		ID   func(childComplexity int) int
-		Text func(childComplexity int) int
-		User func(childComplexity int) int
+		Done  func(childComplexity int) int
+		ID    func(childComplexity int) int
+		Title func(childComplexity int) int
+		User  func(childComplexity int) int
 	}
 
 	User struct {
@@ -67,11 +76,15 @@ type ComplexityRoot struct {
 }
 
 type MutationResolver interface {
+	Noop(ctx context.Context, input *model.NoopInput) (*model.NoopPayload, error)
 	CreateTodo(ctx context.Context, input model.NewTodo) (*model.Todo, error)
 	CreateUser(ctx context.Context, input model.NewUser) (string, error)
 }
 type QueryResolver interface {
-	Todos(ctx context.Context) ([]*model.Todo, error)
+	Node(ctx context.Context, id string) (model.Node, error)
+	Todos(ctx context.Context, userID string) ([]*model.Todo, error)
+	Todo(ctx context.Context, id string) (*model.Todo, error)
+	User(ctx context.Context, id string) (*model.User, error)
 }
 type TodoResolver interface {
 	User(ctx context.Context, obj *model.Todo) (*model.User, error)
@@ -116,12 +129,72 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Mutation.CreateUser(childComplexity, args["input"].(model.NewUser)), true
 
+	case "Mutation.noop":
+		if e.complexity.Mutation.Noop == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_noop_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.Noop(childComplexity, args["input"].(*model.NoopInput)), true
+
+	case "NoopPayload.clientMutationId":
+		if e.complexity.NoopPayload.ClientMutationID == nil {
+			break
+		}
+
+		return e.complexity.NoopPayload.ClientMutationID(childComplexity), true
+
+	case "Query.node":
+		if e.complexity.Query.Node == nil {
+			break
+		}
+
+		args, err := ec.field_Query_node_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.Node(childComplexity, args["id"].(string)), true
+
+	case "Query.todo":
+		if e.complexity.Query.Todo == nil {
+			break
+		}
+
+		args, err := ec.field_Query_todo_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.Todo(childComplexity, args["id"].(string)), true
+
 	case "Query.todos":
 		if e.complexity.Query.Todos == nil {
 			break
 		}
 
-		return e.complexity.Query.Todos(childComplexity), true
+		args, err := ec.field_Query_todos_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.Todos(childComplexity, args["userId"].(string)), true
+
+	case "Query.user":
+		if e.complexity.Query.User == nil {
+			break
+		}
+
+		args, err := ec.field_Query_user_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.User(childComplexity, args["id"].(string)), true
 
 	case "Todo.done":
 		if e.complexity.Todo.Done == nil {
@@ -137,12 +210,12 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Todo.ID(childComplexity), true
 
-	case "Todo.text":
-		if e.complexity.Todo.Text == nil {
+	case "Todo.title":
+		if e.complexity.Todo.Title == nil {
 			break
 		}
 
-		return e.complexity.Todo.Text(childComplexity), true
+		return e.complexity.Todo.Title(childComplexity), true
 
 	case "Todo.user":
 		if e.complexity.Todo.User == nil {
@@ -233,33 +306,69 @@ var sources = []*ast.Source{
 #
 # https://gqlgen.com/getting-started/
 
+type Query {
+  node(id: ID!): Node
+}
+
+type Mutation {
+  noop(input: NoopInput): NoopPayload
+}
+
+interface Node {
+  id: ID!
+}
+
+input NoopInput {
+  clientMutationId: String
+}
+
+type NoopPayload {
+  clientMutationId: String
+}
+`, BuiltIn: false},
+	{Name: "graph/todo.graphqls", Input: `# GraphQL schema example
+#
+# https://gqlgen.com/getting-started/
+
 type Todo {
   id: ID!
-  text: String!
+  title: String!
   done: Boolean!
   user: User!
 }
+
+extend type Query {
+  todos(userId: ID!): [Todo!]!
+  todo(id: ID!): Todo!
+}
+
+input NewTodo {
+  title: String!
+  userId: String!
+}
+
+extend type Mutation {
+  createTodo(input: NewTodo!): Todo!
+}
+`, BuiltIn: false},
+	{Name: "graph/user.graphqls", Input: `# GraphQL schema example
+#
+# https://gqlgen.com/getting-started/
 
 type User {
   id: ID!
   name: String!
 }
 
-type Query {
-  todos: [Todo!]!
-}
-
-input NewTodo {
-  text: String!
-  userId: String!
+extend type Query {
+  user(id: ID!): User!
 }
 
 input NewUser {
   name: String!
 }
 
-type Mutation {
-  createTodo(input: NewTodo!): Todo!
+extend type Mutation {
   createUser(input: NewUser!): ID!
 }
 `, BuiltIn: false},
@@ -300,6 +409,21 @@ func (ec *executionContext) field_Mutation_createUser_args(ctx context.Context, 
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_noop_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 *model.NoopInput
+	if tmp, ok := rawArgs["input"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("input"))
+		arg0, err = ec.unmarshalONoopInput2ᚖgraphqlᚑserverᚋgraphᚋmodelᚐNoopInput(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
 	args := map[string]interface{}{}
@@ -312,6 +436,66 @@ func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs
 		}
 	}
 	args["name"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_node_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["id"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("id"))
+		arg0, err = ec.unmarshalNID2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_todo_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["id"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("id"))
+		arg0, err = ec.unmarshalNID2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_todos_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["userId"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("userId"))
+		arg0, err = ec.unmarshalNID2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["userId"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_user_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["id"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("id"))
+		arg0, err = ec.unmarshalNID2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["id"] = arg0
 	return args, nil
 }
 
@@ -352,6 +536,45 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 // endregion ************************** directives.gotpl **************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _Mutation_noop(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   true,
+		IsResolver: true,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Mutation_noop_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	fc.Args = args
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Mutation().Noop(rctx, args["input"].(*model.NoopInput))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.NoopPayload)
+	fc.Result = res
+	return ec.marshalONoopPayload2ᚖgraphqlᚑserverᚋgraphᚋmodelᚐNoopPayload(ctx, field.Selections, res)
+}
 
 func (ec *executionContext) _Mutation_createTodo(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	defer func() {
@@ -437,6 +660,77 @@ func (ec *executionContext) _Mutation_createUser(ctx context.Context, field grap
 	return ec.marshalNID2string(ctx, field.Selections, res)
 }
 
+func (ec *executionContext) _NoopPayload_clientMutationId(ctx context.Context, field graphql.CollectedField, obj *model.NoopPayload) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "NoopPayload",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   false,
+		IsResolver: false,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ClientMutationID, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Query_node(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   true,
+		IsResolver: true,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Query_node_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	fc.Args = args
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().Node(rctx, args["id"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(model.Node)
+	fc.Result = res
+	return ec.marshalONode2graphqlᚑserverᚋgraphᚋmodelᚐNode(ctx, field.Selections, res)
+}
+
 func (ec *executionContext) _Query_todos(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -453,9 +747,16 @@ func (ec *executionContext) _Query_todos(ctx context.Context, field graphql.Coll
 	}
 
 	ctx = graphql.WithFieldContext(ctx, fc)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Query_todos_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	fc.Args = args
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Todos(rctx)
+		return ec.resolvers.Query().Todos(rctx, args["userId"].(string))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -470,6 +771,90 @@ func (ec *executionContext) _Query_todos(ctx context.Context, field graphql.Coll
 	res := resTmp.([]*model.Todo)
 	fc.Result = res
 	return ec.marshalNTodo2ᚕᚖgraphqlᚑserverᚋgraphᚋmodelᚐTodoᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Query_todo(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   true,
+		IsResolver: true,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Query_todo_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	fc.Args = args
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().Todo(rctx, args["id"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.Todo)
+	fc.Result = res
+	return ec.marshalNTodo2ᚖgraphqlᚑserverᚋgraphᚋmodelᚐTodo(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) _Query_user(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	fc := &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		Args:       nil,
+		IsMethod:   true,
+		IsResolver: true,
+	}
+
+	ctx = graphql.WithFieldContext(ctx, fc)
+	rawArgs := field.ArgumentMap(ec.Variables)
+	args, err := ec.field_Query_user_args(ctx, rawArgs)
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	fc.Args = args
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().User(rctx, args["id"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(*model.User)
+	fc.Result = res
+	return ec.marshalNUser2ᚖgraphqlᚑserverᚋgraphᚋmodelᚐUser(ctx, field.Selections, res)
 }
 
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -578,7 +963,7 @@ func (ec *executionContext) _Todo_id(ctx context.Context, field graphql.Collecte
 	return ec.marshalNID2string(ctx, field.Selections, res)
 }
 
-func (ec *executionContext) _Todo_text(ctx context.Context, field graphql.CollectedField, obj *model.Todo) (ret graphql.Marshaler) {
+func (ec *executionContext) _Todo_title(ctx context.Context, field graphql.CollectedField, obj *model.Todo) (ret graphql.Marshaler) {
 	defer func() {
 		if r := recover(); r != nil {
 			ec.Error(ctx, ec.Recover(ctx, r))
@@ -596,7 +981,7 @@ func (ec *executionContext) _Todo_text(ctx context.Context, field graphql.Collec
 	ctx = graphql.WithFieldContext(ctx, fc)
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return obj.Text, nil
+		return obj.Title, nil
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1884,11 +2269,11 @@ func (ec *executionContext) unmarshalInputNewTodo(ctx context.Context, obj inter
 
 	for k, v := range asMap {
 		switch k {
-		case "text":
+		case "title":
 			var err error
 
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("text"))
-			it.Text, err = ec.unmarshalNString2string(ctx, v)
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("title"))
+			it.Title, err = ec.unmarshalNString2string(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -1929,9 +2314,41 @@ func (ec *executionContext) unmarshalInputNewUser(ctx context.Context, obj inter
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputNoopInput(ctx context.Context, obj interface{}) (model.NoopInput, error) {
+	var it model.NoopInput
+	asMap := map[string]interface{}{}
+	for k, v := range obj.(map[string]interface{}) {
+		asMap[k] = v
+	}
+
+	for k, v := range asMap {
+		switch k {
+		case "clientMutationId":
+			var err error
+
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("clientMutationId"))
+			it.ClientMutationID, err = ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+		}
+	}
+
+	return it, nil
+}
+
 // endregion **************************** input.gotpl *****************************
 
 // region    ************************** interface.gotpl ***************************
+
+func (ec *executionContext) _Node(ctx context.Context, sel ast.SelectionSet, obj model.Node) graphql.Marshaler {
+	switch obj := (obj).(type) {
+	case nil:
+		return graphql.Null
+	default:
+		panic(fmt.Errorf("unexpected type %T", obj))
+	}
+}
 
 // endregion ************************** interface.gotpl ***************************
 
@@ -1952,6 +2369,8 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Mutation")
+		case "noop":
+			out.Values[i] = ec._Mutation_noop(ctx, field)
 		case "createTodo":
 			out.Values[i] = ec._Mutation_createTodo(ctx, field)
 			if out.Values[i] == graphql.Null {
@@ -1962,6 +2381,30 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				invalids++
 			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch()
+	if invalids > 0 {
+		return graphql.Null
+	}
+	return out
+}
+
+var noopPayloadImplementors = []string{"NoopPayload"}
+
+func (ec *executionContext) _NoopPayload(ctx context.Context, sel ast.SelectionSet, obj *model.NoopPayload) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, noopPayloadImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	var invalids uint32
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("NoopPayload")
+		case "clientMutationId":
+			out.Values[i] = ec._NoopPayload_clientMutationId(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -1988,6 +2431,17 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Query")
+		case "node":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_node(ctx, field)
+				return res
+			})
 		case "todos":
 			field := field
 			out.Concurrently(i, func() (res graphql.Marshaler) {
@@ -1997,6 +2451,34 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_todos(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&invalids, 1)
+				}
+				return res
+			})
+		case "todo":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_todo(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&invalids, 1)
+				}
+				return res
+			})
+		case "user":
+			field := field
+			out.Concurrently(i, func() (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_user(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&invalids, 1)
 				}
@@ -2033,8 +2515,8 @@ func (ec *executionContext) _Todo(ctx context.Context, sel ast.SelectionSet, obj
 			if out.Values[i] == graphql.Null {
 				atomic.AddUint32(&invalids, 1)
 			}
-		case "text":
-			out.Values[i] = ec._Todo_text(ctx, field, obj)
+		case "title":
+			out.Values[i] = ec._Todo_title(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				atomic.AddUint32(&invalids, 1)
 			}
@@ -2756,6 +3238,28 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 		return graphql.Null
 	}
 	return graphql.MarshalBoolean(*v)
+}
+
+func (ec *executionContext) marshalONode2graphqlᚑserverᚋgraphᚋmodelᚐNode(ctx context.Context, sel ast.SelectionSet, v model.Node) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._Node(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalONoopInput2ᚖgraphqlᚑserverᚋgraphᚋmodelᚐNoopInput(ctx context.Context, v interface{}) (*model.NoopInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputNoopInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalONoopPayload2ᚖgraphqlᚑserverᚋgraphᚋmodelᚐNoopPayload(ctx context.Context, sel ast.SelectionSet, v *model.NoopPayload) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._NoopPayload(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOString2string(ctx context.Context, v interface{}) (string, error) {

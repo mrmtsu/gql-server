@@ -5,7 +5,6 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"graphql-server/domain/entity"
 	"graphql-server/graph/generated"
 	"graphql-server/graph/model"
@@ -20,7 +19,7 @@ func (r *mutationResolver) CreateTodo(ctx context.Context, input model.NewTodo) 
 			ID:     tid,
 			Title:  input.Title,
 			Done:   false,
-			UserID: input.UserID,
+			UserID: entity.UserID(input.UserID),
 		}
 
 		return conn.Omit().Create(&e).Error
@@ -32,15 +31,44 @@ func (r *mutationResolver) CreateTodo(ctx context.Context, input model.NewTodo) 
 }
 
 func (r *queryResolver) Todos(ctx context.Context, userID string) ([]*model.Todo, error) {
-	panic(fmt.Errorf("not implemented"))
+	var es []entity.Todo
+	if err := r.dbc.RunInSession(func(conn *gorm.DB) error {
+		return conn.Where(entity.Todo{UserID: entity.UserID(userID)}).Find(&es).Error
+	}); err != nil {
+		return nil, err
+	}
+
+	items := make([]*model.Todo, 0, len(es))
+	for _, e := range es {
+		items = append(items, &model.Todo{
+			ID:     e.ID,
+			Title:  e.Title,
+			Done:   e.Done,
+			UserID: e.UserID.String(),
+		})
+	}
+
+	return items, nil
 }
 
-func (r *todoResolver) Title(ctx context.Context, obj *model.Todo) (string, error) {
-	panic(fmt.Errorf("not implemented"))
+func (r *queryResolver) Todo(ctx context.Context, id string) (*model.Todo, error) {
+	var e entity.Todo
+	if err := r.dbc.RunInSession(func(conn *gorm.DB) error {
+		return conn.Where(entity.Todo{ID: id}).Take(&e).Error
+	}); err != nil {
+		return nil, err
+	}
+
+	return &model.Todo{
+		ID:     e.ID,
+		Title:  e.Title,
+		Done:   e.Done,
+		UserID: e.UserID.String(),
+	}, nil
 }
 
 func (r *todoResolver) User(ctx context.Context, obj *model.Todo) (*model.User, error) {
-	panic(fmt.Errorf("not implemented"))
+	return r.Query().User(ctx, obj.UserID)
 }
 
 // Todo returns generated.TodoResolver implementation.
