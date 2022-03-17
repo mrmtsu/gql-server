@@ -5,7 +5,6 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"graphql-server/domain/entity"
 	"graphql-server/graph/generated"
 	"graphql-server/graph/model"
@@ -14,7 +13,7 @@ import (
 )
 
 func (r *articleResolver) User(ctx context.Context, obj *model.Article) (*model.User, error) {
-	panic(fmt.Errorf("not implemented"))
+	return r.Query().User(ctx, obj.UserID)
 }
 
 func (r *mutationResolver) CreateArticle(ctx context.Context, input model.NewArticle) (*model.Article, error) {
@@ -57,7 +56,19 @@ func (r *queryResolver) Articles(ctx context.Context, userID string) ([]*model.A
 }
 
 func (r *queryResolver) Article(ctx context.Context, id string) (*model.Article, error) {
-	panic(fmt.Errorf("not implemented"))
+	var e entity.Article
+	if err := r.dbc.RunInSession(func(conn *gorm.DB) error {
+		return conn.Where(entity.Article{ID: id}).Take(&e).Error
+	}); err != nil {
+		return nil, err
+	}
+
+	return &model.Article{
+		ID:     e.ID,
+		Title:  e.Title,
+		Body:   e.Body,
+		UserID: e.UserID.String(),
+	}, nil
 }
 
 // Article returns generated.ArticleResolver implementation.

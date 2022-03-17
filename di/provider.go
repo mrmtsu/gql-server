@@ -1,3 +1,4 @@
+//go:build wireinject
 // +build wireinject
 
 package di
@@ -8,6 +9,7 @@ import (
 	"graphql-server/cmd/todo/command"
 	"graphql-server/cmd/todo/command/server"
 	"graphql-server/graph"
+	"os"
 
 	"github.com/google/wire"
 )
