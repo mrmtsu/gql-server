@@ -29,4 +29,21 @@ CREATE TABLE IF NOT EXISTS `users` (
 ENGINE = InnoDB DEFAULT CHARSET=utf8mb4
 COMMENT = '';
 
+CREATE TABLE IF NOT EXISTS `articles` (
+  `id` VARCHAR(255) NOT NULL,
+  `title` VARCHAR(255) NOT NULL,
+  `body` VARCHAR(255) NOT NULL,
+  `user_id` VARCHAR(255) NOT NULL,
+  `created_at` DATETIME NOT NULL,
+  `updated_at` DATETIME NOT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `article_idx` (`user_id` ASC),
+  CONSTRAINT `article_user`
+    FOREIGN KEY (`user_id`)
+    REFERENCES `users` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB DEFAULT CHARSET=utf8mb4
+COMMENT = '';
+
 SET FOREIGN_KEY_CHECKS=1;

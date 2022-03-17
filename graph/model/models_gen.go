@@ -6,6 +6,12 @@ type Node interface {
 	IsNode()
 }
 
+type NewArticle struct {
+	Title  string `json:"title"`
+	Body   string `json:"body"`
+	UserID string `json:"userId"`
+}
+
 type NewTodo struct {
 	Title  string `json:"title"`
 	UserID string `json:"userId"`
